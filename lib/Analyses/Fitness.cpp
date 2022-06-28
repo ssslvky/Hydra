@@ -1,10 +1,13 @@
 #include <algorithm>
 #include <string>
-#include "hydra/Analyses/Fitness.h"
+#include "/home/wzby/llvm-project/llvm/lib/Transforms/Hydra/Analyses/Fitness/Fitness.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/InstIterator.h"
+#include "llvm/IR/InstIterator.h"
+
+#include <llvm/IR/LegacyPassManager.h>
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include <llvm/Support/CommandLine.h>
 
 using namespace llvm;
 using namespace hydra;
@@ -12,7 +15,7 @@ using namespace hydra;
 char Fitness::ID = 0;
 
 void Fitness::getAnalysisUsage(AnalysisUsage &Info) const {
-  Info.addRequired<CallGraph>();
+  Info.addRequired<CallGraphWrapperPass>();
   Info.setPreservesAll();
 }
 
@@ -42,11 +45,11 @@ static bool referencesGlobalVariables(const Function &F) {
 }
 
 bool Fitness::callsUnknownFunction(const CallGraphNode &CGN) const {
-  DEBUG(dbgs() << "Fitness::callsUnknownFunction()\n");
-  DEBUG(CGN.print(dbgs()));
+  dbgs() << "Fitness::callsUnknownFunction()\n";
+  CGN.print(dbgs());
   return std::any_of(CGN.begin(), CGN.end(),
                      [this](const CallGraphNode::CallRecord &CR) {
-    DEBUG(dbgs() << "Checking another CallRecord\n");
+    dbgs() << "Checking another CallRecord\n";
     assert(CR.second);
     auto fun = CR.second->getFunction();
     // if fun is nullptr, it is external
@@ -55,11 +58,11 @@ bool Fitness::callsUnknownFunction(const CallGraphNode &CGN) const {
 }
 
 bool Fitness::runOnModule(Module &M) {
-  DEBUG(dbgs() << "Fitness::runOnModule()\n");
+  dbgs() << "Fitness::runOnModule()\n";
   
-  CallGraph &CG{ getAnalysis<CallGraph>() };
+  CallGraph &CG = getAnalysis<CallGraphWrapperPass>().getCallGraph();
 
-  DEBUG(CG.print(dbgs(), nullptr));
+  CG.print(dbgs());
   
   // initialisation
   for (const Function &F : M) {
@@ -72,13 +75,13 @@ bool Fitness::runOnModule(Module &M) {
   // iteration
   bool changesMade;
   do {
-    DEBUG(dbgs() << "Doing another iteration.\n");
+    dbgs() << "Doing another iteration.\n";
     changesMade = false;
-    for (auto p : CG) {
-      DEBUG(dbgs() << "Iterating though another CallRecord\n");
+    for (const auto &p : CG) {
+      dbgs() << "Iterating though another CallRecord\n";
       const Function *fun = p.first;
       if (!fun) {
-        DEBUG(dbgs() << "Warning: fun == nullptr in Fitness::runOnModule\n");
+        dbgs() << "Warning: fun == nullptr in Fitness::runOnModule\n";
         continue;
       }
       assert(p.second);
@@ -90,7 +93,7 @@ bool Fitness::runOnModule(Module &M) {
     }
   } while (changesMade);
 
-  DEBUG(dbgs() << "Finished iterating.\n");
+  dbgs() << "Finished iterating.\n";
 
   return false;
 }
@@ -109,7 +112,7 @@ static std::string funTypeToString(Fitness::FunType f) {
 }
 
 void Fitness::print(raw_ostream &O, const Module *) const {
-  DEBUG(dbgs() << "Fitness::print()\n");
+  dbgs() << "Fitness::print()\n";
   O << "Printing info for " << funTypes.size() << " functions\n";
   for (auto &pair : funTypes) {
     O << "The function "; 
@@ -120,5 +123,25 @@ void Fitness::print(raw_ostream &O, const Module *) const {
   }
 }
 
-static RegisterPass<Fitness>
-X("fitness", "Function Fitness for Spawning Analysis", false, true);
+static RegisterPass<Fitness>X("fitness", "Function Fitness for Spawning Analysis", false, true);
+/* static cl::opt<bool> RunFitness(
+    "can-fitness",
+    cl::desc("Can Fitness"),
+    cl::init(false), cl::ZeroOrMore);
+
+static void registerFitness(const PassManagerBuilder &Builder,
+                                            legacy::PassManagerBase &PM) {
+  if (!RunFitness)
+    return;
+  PM.add(new Fitness());
+}
+
+static RegisterStandardPasses RegisterFitness(PassManagerBuilder::EP_EarlyAsPossible,
+                                  registerFitness);
+
+INITIALIZE_PASS_BEGIN(Fitness, "fitness",
+                      "Can Fitness", true, true);
+INITIALIZE_PASS_DEPENDENCY(CallGraphWrapperPass);
+INITIALIZE_PASS_END(Fitness, "fitness",
+                      "Can Fitness", true, true);
+ */

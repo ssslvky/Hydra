@@ -1,5 +1,5 @@
 // std includes
-#include <cmath>
+#include <numeric>
 
 // boost includes
 #include <boost/graph/graph_traits.hpp>
@@ -8,16 +8,16 @@
 #include <boost/property_map/property_map.hpp>
 
 // llvm includes
-#include "llvm/Support/CFG.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/Support/Debug.h"
 
 // hydra includes
-#include "hydra/Analyses/Decider.h"
-#include "hydra/Analyses/FunArgInfo.h"
-#include "hydra/Analyses/Profitability.h"
-#include "hydra/Support/FunAlgorithms.h"
-#include "hydra/Support/PrintCollection.h"
-#include "hydra/Support/TargetMacros.h"
+#include "Decider.h"
+#include "/home/wzby/llvm-project/llvm/lib/Transforms/Hydra/Analyses/FunArgInfo/FunArgInfo.h"
+#include "/home/wzby/llvm-project/llvm/lib/Transforms/Hydra/Analyses/Profitability/Profitability.h"
+#include "/home/wzby/llvm-project/llvm/lib/Transforms/Hydra/Analyses/Support/FunAlgorithms.h"
+#include "/home/wzby/llvm-project/llvm/lib/Transforms/Hydra/Analyses/Support/PrintCollection.h"
+#include "/home/wzby/llvm-project/llvm/lib/Transforms/Hydra/Analyses/Support/TargetMacros.h"
 
 using namespace llvm;
 using namespace hydra;
@@ -43,7 +43,7 @@ using bb_citer = BasicBlock::const_iterator;
 //------------------------------------------------------------------------------
 static int countInstructions(bb_citer first, bb_citer last,
                              const Profitability &Profit) {
-  DEBUG(dbgs() << "countInstructions()\n");
+  (dbgs() << "countInstructions()\n");
   int count = std::accumulate(first, last, 0,
                               [&](int runningTotal, const Instruction &i) {
     int extraInsts{ 1 };
@@ -52,7 +52,7 @@ static int countInstructions(bb_citer first, bb_citer last,
     }
     return runningTotal + extraInsts;
   });
-  DEBUG(dbgs() << "Count is " << count << "\n");
+  (dbgs() << "Count is " << count << "\n");
   return count;
 }
 
@@ -61,7 +61,7 @@ static int countInstructions(bb_citer first, bb_citer last,
 static int genGraph(const CallInst *spawn, const std::set<Instruction *> &joins,
                     const Profitability &Profit, Graph &out_graph,
                     std::set<int> &out_joinVertices) {
-  DEBUG(dbgs() << "Decider::genGraph()\n");
+  (dbgs() << "Decider::genGraph()\n");
 
   // early exit: if we have a trivial join, tell the caller
   if (joins.size() == 1u &&
@@ -146,7 +146,7 @@ static int genGraph(const CallInst *spawn, const std::set<Instruction *> &joins,
     }
   }
 
-  DEBUG(printCollection(weights, dbgs(), "Weights"));
+  (printCollection(weights, dbgs(), "Weights"));
 
   out_graph = Graph{ edges.begin(),   edges.end(),
                      weights.begin(), static_cast<VSizeType>(numNodes) };
@@ -161,7 +161,7 @@ enum class Aggregator { min, arithmeticMean, max };
 static unsigned getSpawnToJoinCost(const CallInst *spawn,
                                    const std::set<Instruction *> &joins,
                                    Profitability &Profit, Aggregator aggr) {
-  DEBUG(dbgs() << "Decider::getSpawnToJoinCost()\n");
+  (dbgs() << "Decider::getSpawnToJoinCost()\n");
 
   Graph g;
   std::set<int> joinVertices;
@@ -177,16 +177,16 @@ static unsigned getSpawnToJoinCost(const CallInst *spawn,
 
   boost::dijkstra_shortest_paths(g, spawnVertex,
                                  boost::distance_map(distances.data()));
-  DEBUG(printCollection(distances, dbgs(), "Distances"));
+  (printCollection(distances, dbgs(), "Distances"));
 
   std::vector<unsigned> joinDistances;
   joinDistances.reserve(joinVertices.size());
-  DEBUG(dbgs() << "signed distances: ");
+  (dbgs() << "signed distances: ");
   for (int v : joinVertices) {
-    DEBUG(dbgs() << v << " has " << distances[v] << ", ");
+    (dbgs() << v << " has " << distances[v] << ", ");
     joinDistances.push_back(distances[v]);
   }
-  DEBUG(dbgs() << "\n");
+  (dbgs() << "\n");
 
   // aggregate the joinDistances using the inputed method
   switch (aggr) {
@@ -194,17 +194,17 @@ static unsigned getSpawnToJoinCost(const CallInst *spawn,
     return *std::min_element(joinDistances.begin(), joinDistances.end());
 
   case Aggregator::arithmeticMean: {
-    DEBUG(printCollection(joinDistances, dbgs(), "Costs"));
+    (printCollection(joinDistances, dbgs(), "Costs"));
 
     const double acc =
         std::accumulate(joinDistances.begin(), joinDistances.end(), 0.0);
-    DEBUG(dbgs() << "total cost is " << acc << "\n");
+    (dbgs() << "total cost is " << acc << "\n");
     const double mean = acc / joinDistances.size();
-    DEBUG(dbgs() << "mean cost is " << mean << "\n");
+    (dbgs() << "mean cost is " << mean << "\n");
     const double rounded = round(mean);
-    DEBUG(dbgs() << "rounded mean is " << rounded << "\n");
+    (dbgs() << "rounded mean is " << rounded << "\n");
     const unsigned casted = static_cast<unsigned>(rounded);
-    DEBUG(dbgs() << "casted mean is " << casted << "\n");
+    (dbgs() << "casted mean is " << casted << "\n");
     return casted;
     /*
     return static_cast<unsigned>(
@@ -230,9 +230,9 @@ static unsigned getSpawnToJoinCost(const CallInst *spawn,
 static bool
 decide(const std::pair<const CallInst *, std::set<Instruction *>> &pair,
        FunArgInfo &FAI, Profitability &Profit) {
-  DEBUG(dbgs() << "decide() for:\n");
-  DEBUG(pair.first->print(dbgs()));
-  DEBUG(dbgs() << "\nIn " << pair.first->getCalledFunction()->getName()
+  (dbgs() << "decide() for:\n");
+  (pair.first->print(dbgs()));
+  (dbgs() << "\nIn " << pair.first->getCalledFunction()->getName()
                << "()\n");
 
   auto *funStats = Profit.getFunStats(*pair.first->getCalledFunction());
@@ -240,19 +240,19 @@ decide(const std::pair<const CallInst *, std::set<Instruction *>> &pair,
   assert(funStats);
 
   const unsigned calleeInsts{ funStats->totalCost };
-  DEBUG(dbgs() << "calleeInsts is " << calleeInsts << "\n");
+  (dbgs() << "calleeInsts is " << calleeInsts << "\n");
 
   //TODO: uses arithmeticMean for now... make configurable later?
   const unsigned callerInsts{ getSpawnToJoinCost(
       pair.first, pair.second, Profit, Aggregator::arithmeticMean) };
-  DEBUG(dbgs() << "callerInsts is " << callerInsts << "\n");
+  (dbgs() << "callerInsts is " << callerInsts << "\n");
 
   const unsigned serialCost{ calleeInsts + callerInsts };
   const unsigned parallelCost{ spawnCost + std::max(calleeInsts, callerInsts) +
                                syncCost };
 
-  DEBUG(dbgs() << "serialCost == " << serialCost << "\n");
-  DEBUG(dbgs() << "parallelCost == " << parallelCost << "\n\n");
+  (dbgs() << "serialCost == " << serialCost << "\n");
+  (dbgs() << "parallelCost == " << parallelCost << "\n\n");
 
   const bool decision{ serialCost > parallelCost };
   if (decision) {
@@ -271,7 +271,7 @@ decide(const std::pair<const CallInst *, std::set<Instruction *>> &pair,
 
 //------------------------------------------------------------------------------
 bool Decider::runOnModule(llvm::Module &M) {
-  DEBUG(dbgs() << "Decider::runOnModule()\n");
+  (dbgs() << "Decider::runOnModule()\n");
 
   auto &Profit = getAnalysis<Profitability>();
   auto &FAI = getAnalysis<FunArgInfo>();

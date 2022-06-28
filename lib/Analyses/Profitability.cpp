@@ -1,31 +1,38 @@
-#include "hydra/Analyses/Fitness.h"
-#include "hydra/Analyses/Profitability.h"
-#include "hydra/Support/ForEachSCC.h"
-#include "hydra/Support/FunAlgorithms.h"
+#include "/home/wzby/llvm-project/llvm/lib/Transforms/Hydra/Analyses/Fitness/Fitness.h"
+#include "Profitability.h"
+//#include "hydra/Support/ForEachSCC.h"
+#include "/home/wzby/llvm-project/llvm/lib/Transforms/Hydra/Analyses/Support/FunAlgorithms.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Analysis/CallGraph.h"
+#include "/home/wzby/llvm-project/llvm/lib/Transforms/Hydra/Analyses/Support/ForEachSCC.h"
+#include "llvm/Analysis/CallGraphSCCPass.h"
+
+#include <llvm/IR/LegacyPassManager.h>
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include <llvm/Support/CommandLine.h>
+
 
 using namespace llvm;
 using namespace hydra;
-
 char Profitability::ID = 0;
 
 void Profitability::getAnalysisUsage(AnalysisUsage &Info) const {
   Info.setPreservesAll();
   Info.addRequired<Fitness>();
-  Info.addRequired<CallGraph>();
-  Info.addRequired<LoopInfo>();
-  Info.addRequired<ScalarEvolution>();
+  Info.addRequired<CallGraphWrapperPass>();
+  Info.addRequired<LoopInfoWrapperPass>();
+  Info.addRequired<ScalarEvolutionWrapperPass>();
 }
 
 bool Profitability::runOnModule(Module &M) {
-  DEBUG(dbgs() << "Profitability::runOnModule()\n");
+  dbgs() << "Profitability::runOnModule()\n";
 
-  auto &CG = getAnalysis<CallGraph>();
+  auto &CG = getAnalysis<CallGraphWrapperPass>().getCallGraph();
 
-  for_each_scc([this](CallGraphSCC &SCC) { processSCC(SCC); }, CG);
+  for_each_scc([this](CallGraphSCC &SCC){processSCC(SCC);}, CG);
 
   return false;
 }
@@ -58,7 +65,7 @@ void Profitability::FunStats::print(raw_ostream &O) const {
 // calculate fun stats, except for totalCost and spawnable
 static Profitability::FunStats
 calculateFunStats(const Function &F, const LoopInfo &LI, ScalarEvolution &SE) {
-  DEBUG(dbgs() << "Protiability::FunStats::calculateFunStates()\n");
+  dbgs() << "Protiability::FunStats::calculateFunStates()\n";
   // initialise the return value with all zero data
   Profitability::FunStats ret{};
   for (const auto &BB : F) {
@@ -78,7 +85,7 @@ calculateFunStats(const Function &F, const LoopInfo &LI, ScalarEvolution &SE) {
     // if the BB is inside a loop, multiply instructions by the trip count
     if (Loop *l = LI.getLoopFor(&BB)) {
       unsigned tripCount = SE.getSmallConstantTripCount(l, nullptr);
-      DEBUG(dbgs() << tripCount << " is the tripCount for this BB\n");
+      dbgs() << tripCount << " is the tripCount for this BB\n";
       if (tripCount > 0u) {
         // the trip count is known! multiply all our numbers by it
         // FIXME: should really use saturating multiplication here
@@ -103,14 +110,13 @@ calculateFunStats(const Function &F, const LoopInfo &LI, ScalarEvolution &SE) {
 }
 
 void Profitability::processSCC(const CallGraphSCC &SCC) {
-  DEBUG(dbgs() << "Profitability::ProcessSCC()\n");
+  dbgs() << "Profitability::ProcessSCC()\n";
 
   // work out the 'initial' cost of all nodes in the SCC, excluding recursion
   for (const auto *node : SCC) {
     auto *fun = node->getFunction();
     if (!fun) {
-      DEBUG(
-          dbgs() << "Warning: fun == nullptr in Profitability::ProcessSCC()\n");
+        dbgs() << "Warning: fun == nullptr in Profitability::ProcessSCC()\n";
       continue;
     }
 
@@ -121,8 +127,8 @@ void Profitability::processSCC(const CallGraphSCC &SCC) {
 
       // get FunStats with numInsts, numEmittingInsts and numMemAccesses
       // precalculated
-      auto fs = calculateFunStats(*fun, getAnalysis<LoopInfo>(*fun),
-                                  getAnalysis<ScalarEvolution>(*fun));
+      auto fs = calculateFunStats(*fun, getAnalysis<LoopInfoWrapperPass>().getLoopInfo(),
+                                  getAnalysis<ScalarEvolutionWrapperPass>().getSE());
 
       // calculate total cost
       fs.totalCost = fs.numEmittingInsts;
@@ -133,8 +139,8 @@ void Profitability::processSCC(const CallGraphSCC &SCC) {
       };
 
       auto &Fit = getAnalysis<Fitness>();
-      fs.spawnable = (Fit.getFunType(*fun) == Fitness::FunType::Functional);
-
+      fs.spawnable = (Fit.getFunType(*fun) == hydra::Fitness::FunType::Functional);
+      //fs.spawnable = true;
       statsMap[fun] = std::move(fs);
     }
   }
@@ -175,3 +181,27 @@ void Profitability::processSCC(const CallGraphSCC &SCC) {
 static RegisterPass<Profitability>
 X("profitability",
   "Profitability of Function Spawning Analysis", false, true);
+/* static cl::opt<bool> RunProfitability(
+    "can-profitability",
+    cl::desc("Can Profitability"),
+    cl::init(false), cl::ZeroOrMore);
+
+static void registerProfitability(const PassManagerBuilder &Builder,
+                                            legacy::PassManagerBase &PM) {
+  if (!RunProfitability)
+    return;
+
+  PM.add(new Profitability());
+}
+
+static RegisterStandardPasses RegisterProfitability(PassManagerBuilder::EP_EarlyAsPossible,
+                                  registerProfitability);
+
+INITIALIZE_PASS_BEGIN(Profitability, "profitability",
+                      "Can Profitability", true, true);
+INITIALIZE_PASS_DEPENDENCY(Fitness);
+INITIALIZE_PASS_DEPENDENCY(CallGraphWrapperPass);
+INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass);
+INITIALIZE_PASS_DEPENDENCY(ScalarEvolutionWrapperPass);
+INITIALIZE_PASS_END(Profitability, "profitability",
+                      "Can Profitability", true, true); */
